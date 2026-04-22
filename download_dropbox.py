@@ -1,15 +1,52 @@
-import dropbox
 import os
 import time
-from dropbox.exceptions import ApiError
-from requests.exceptions import ConnectionError, ChunkedEncodingError
+from pathlib import Path
 
-# 1. 貼入你的 Token
-TOKEN = 'sl.u.AGWqAt1EnS8wf_kjEHKO915lFSTylE0KrrLQh_6_A0kU4NUG0qcPTYxU1diOGw8pO0RbiILj_UgW2Bnw7BMPVxemlnc-XYyruPGvadZ9EoyVnURHOCTy_X-uSW6jVyCf1Brjo2xiDlARUAeA8AphNvW-fHdAwGNVtibC-iWiL1kkqfzutEQAE0IckkH9ZoH1nQXEEd-tnDXDZFZT_GF53vzGrpzemO_dPfvj0lrCFhhDi29wQVuFQLlTB2b8sRFqbQXdvsMA3Vp3fc_hLW3p_E33N9UMokWYKM5SCgFcAmO-vPRHcVgxnDXG8NwgItZHeT1WypoqxzVkzs9Q-0_CJC3oPmP5l4vdPM9RYYiTj-2uT7-06UHsSTXY4yelTSEr_s9lbVr5faameNRUO_15TiuWj2iDnpgXL9l-SaR5LJUyCsmKnfwGygg6hMEBkFbxYf_GqPjjEEOm7pdWNWDaPG7-gXrwrejyn9W9LV3lL3UYZdvWkgJnPAR9xKPimi-ekymCyFRWohcyqTkuhj00dWvUU9ro3bFCGHD2YRocQawHjF32j4K47j4zqZUnhcOsgdaW7DLYHbHl-caw7O-R6-Jc1A_Ny37wjt8625MShaGuT4EkQpSNTQ_qhucKPCYi7BSzXcgS87nIUI1Mcb5Ikxu_kcyAmxhzn8Bfs3zlpHJ4ZT3GZzUarwyT8ZJYi52Nm0LAmGQ2uB4qjEGlIe2XjRd_G45ggGXdETzbCzt4UEf3nYmKPwVxajywjRYAry7_qSHYxuMUat1qLUMVl42VopC16qz68YzpPkHxzhmymGtLqpsmrTQX2EeBWscRgcj5Zb0jKYwkJ7O_iqdn2ioKPe6-ApovEIaTO_xDFHnx8kgkT3IUn2Ev5-_BVYc9vPyMQBbZJnLc7XPo1dcasdlcu-di-JpuFBgHxOS54ZyGMzuKj7RJZfhSfASqF_-8BlqLexMNeOpm91Ev4T1hOhPKhdwpqM4lP3eQ7NOul1VpId1BG39faGHFgLixv8rHbFFtyNis8NPenFGTfMqkFPH_Rg0VmNHlB0noDRThaoGkZ2f0M0k9Vp5KBN_9uEarVbASF8xf72UZO21U8_7-2oYe_f5rC5ECrv9QL69kcXobrJQLpcnWkzNnGAyv9enjJPm1sBrKlK-L-M-qBY1q4WUvKBAcxGQlvOVmsNfSnpPzC6UoKjatoeRwrvDECwjGwnKZwlNeHdd5PYdjIIodp0_heG5gAV5wKwDRi3AFXgzPf3R6Np0eXzqBM9q15adDkSzE0tt5pLCizrLYgX99l5XxBDB9Jv92B1KhV6BtwX0YO-bzKw'
-# 2. 你的共享連結
-SHARED_LINK = 'https://www.dropbox.com/scl/fo/bpxvkojbghdc3ssvy7pkt/AECxW_fpg-Lw4AQobfHPhEE?rlkey=empa0cwpx7tex1ypmujwkm0z9&st=xq8in5n3&dl=0'
+import dropbox
+from requests.exceptions import ChunkedEncodingError, ConnectionError
 
-dbx = dropbox.Dropbox(TOKEN, timeout=7200) # 120 min
+
+def _load_dotenv(dotenv_path: str | os.PathLike[str] = ".env") -> None:
+    """Minimal .env loader (KEY=VALUE per line).
+
+    - Ignores blank lines and lines starting with '#'
+    - Supports optional single/double quotes around values
+    - Does not override existing environment variables
+    """
+
+    path = Path(dotenv_path)
+    if not path.exists() or not path.is_file():
+        return
+
+    for raw_line in path.read_text(encoding="utf-8").splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#"):
+            continue
+        if "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        key = key.strip()
+        value = value.strip()
+        if not key:
+            continue
+        if (len(value) >= 2) and ((value[0] == value[-1] == '"') or (value[0] == value[-1] == "'")):
+            value = value[1:-1]
+        os.environ.setdefault(key, value)
+
+
+_load_dotenv(Path(__file__).with_name(".env"))
+
+TOKEN = os.environ.get("DROPBOX_TOKEN")
+if not TOKEN:
+    raise RuntimeError(
+        "Missing Dropbox API token. Set DROPBOX_TOKEN in .env (and optionally DROPBOX_SHARED_LINK) "
+        "or use the public-link downloader script instead."
+    )
+
+# 共享連結（可用環境變數覆蓋）
+SHARED_LINK = 'https://www.dropbox.com/scl/fo/bpxvkojbghdc3ssvy7pkt/AECxW_fpg-Lw4AQobfHPhEE?rlkey=empa0cwpx7tex1ypmujwkm0z9&st=l1c6mdk5&dl=0'
+
+dbx = dropbox.Dropbox(TOKEN, timeout=7200)  # 120 min
 target_dir = './360-videos'
 log_file = 'downloaded_log.txt' # 紀錄檔案名稱
 
@@ -64,8 +101,10 @@ def download_with_retry(dest_path, shared_link_url, file_path, max_retries=5):
 print("正在獲取 Dropbox 檔案列表...")
 shared_link = dropbox.files.SharedLink(url=SHARED_LINK)
 
+ALLOWED_EXTS = {".mp4"}
+
 download_count = 0
-MAX_DOWNLOADS = 500  # 本次執行的目標下載數量 230 videos/53G
+MAX_DOWNLOADS = 300  # 本次執行的目標下載數量 230 videos/53G
 
 try:
     res = dbx.files_list_folder(path="", shared_link=shared_link)
@@ -78,6 +117,10 @@ try:
                 return True
             
             if isinstance(entry, dropbox.files.FileMetadata):
+                # 只下載 mp4（不分大小寫）
+                _, ext = os.path.splitext(entry.name)
+                if ext.lower() not in ALLOWED_EXTS:
+                    continue
                 # 檢查是否已在紀錄中
                 if entry.name in downloaded_set:
                     # print(f"  - 跳過已存在檔案: {entry.name}")
